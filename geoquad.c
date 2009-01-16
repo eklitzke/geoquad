@@ -12,6 +12,22 @@
 #define LATITUDE_MAX     90.0
 #define GEOQUAD_STEP     0.05
 
+/* Interleaved ones and zeroes, LSB = 1 */
+#define INTER16L 0x5555
+#define INTER32L 0x55555555
+
+/* Interleaved ones and zeroes, MSB = 1 */
+#define INTER16M 0xAAAA
+#define INTER32M 0xAAAAAAAA
+
+struct quad_s
+{
+	float nw;
+	float ne;
+	float se;
+	float sw;
+};
+
 static inline uint32_t interleave32(uint16_t x, uint16_t y)
 {
 	return (
@@ -21,17 +37,48 @@ static inline uint32_t interleave32(uint16_t x, uint16_t y)
 		morton_forward[x & 0xFF]);
 }
 
+/* Deinterleave a 32 bit number into one of its 16 bit constituent parts. */
+#define DEINTERLEAVE_HALF(z) \
+	((uint16_t)\
+	 	(morton_sparse[(z) & INTER16] |\
+		(morton_sparse[((z) >> 16) & INTER16] << 8)))
+
+/* Deinterleave z into x and y */
 static inline void deinterleave32(uint32_t z, uint16_t *x, uint16_t *y)
 {
-	uint16_t half = z & 0xFFFF;
-	*x = morton_sparse[half & 0x5555];
-	half >>= 1;
-	*y = (morton_sparse[half & 0x5555]);
-	half = z >> 16;
-	*x |= (morton_sparse[half & 0x5555]) << 8;
-	half >>= 1;
-	*y |= ((morton_sparse[half & 0x5555]) << 8);
+	*x = DEINTERLEAVE_HALF(z);
+	*y = DEINTERLEAVE_HALF(z>>1); /* GCC will do the Right Thing */
 }
+
+static inline uint32_t geoquad_rightof(uint32_t gq)
+{
+	float lng = 16_to_lng(DEINTERLEAVE_HALF(gq)) + GEOQUAD_STEP;
+	return (gq & INTER32M) | lng_to_16(lng);
+}
+
+static inline (struct quad_s *) geoquad_to_quad_s(uint32_t g)
+{
+
+static inline uint16_t lng_to_16(float lng)
+{
+	return (uint16_t) ((lng - LONGITUDE_MIN) / GEOQUAD_STEP);
+}
+
+static inline uint16_t lat_to_16(float lat)
+{
+	return (uint16_t) ((lat - LATITUDE_MIN) / GEOQUAD_STEP);
+}
+
+static inline float 16_to_lng(uint16_t lng16)
+{
+	return (((float) lng16) * GEOQUAD_STEP) + LONGITUDE_MIN;
+}
+
+static inline float 16_to_lat(uint16_t lat16)
+{
+	return (((float) lat16) * GEOQUAD_STEP) + LATITUDE_MIN;
+}
+
 
 static PyObject*
 geoquad_create(PyObject *self, PyObject *args)
@@ -71,6 +118,14 @@ geoquad_parse(PyObject *self, PyObject *args)
 	PyTuple_SetItem(ret, 1, PyFloat_FromDouble((double) lat));
 	return ret;
 }
+
+static PyObject*
+geoquad_nearby(PyObject *self, PyObject *args)
+{
+	long geoquad;
+	float radius;
+	if (!PyArg_ParseTuple(args, "lf", &geoquad, &radius))
+		return NULL;
 
 static PyMethodDef geoquad_methods[] = {
 	{ "create", (PyCFunction) geoquad_create, METH_VARARGS, "create a geoquad from a (lng, lat)" },
