@@ -18,6 +18,6 @@ setup(
 	version			= __version__,
 	author			= 'Evan Klitzke',
 	author_email	= 'evan@eklitzke.org',
-	description		= 'Cogent in-process',
+	description		= 'Fast geoquad operations'
 	ext_modules		= [geoquad_extension]
 )
