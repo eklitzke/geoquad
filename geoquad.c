@@ -43,13 +43,15 @@ static inline uint32_t interleave32(uint16_t x, uint16_t y)
 	 	(morton_sparse[(z) & INTER16L] |\
 		(morton_sparse[((z) >> 16) & INTER16L] << 8)))
 
+#define INTERLEAVE_HALF(x) \
+	((morton_forward[x >> 8] << 16) | (morton_forward[x & 0xFF]))
+
 /* Deinterleave z into x and y */
 static inline void deinterleave32(uint32_t z, uint16_t *x, uint16_t *y)
 {
 	*x = DEINTERLEAVE_HALF(z);
 	*y = DEINTERLEAVE_HALF(z>>1); /* GCC will do the Right Thing */
 }
-
 
 static inline float half_to_lng(uint16_t lng16)
 {
@@ -73,11 +75,9 @@ static inline uint16_t lat_to_16(float lat)
 
 static inline uint32_t quad_rightof(uint32_t gq)
 {
-	float lng = half_to_lng(DEINTERLEAVE_HALF(gq)) + GEOQUAD_STEP;
-	return (gq & INTER32M) | lng_to_16(lng);
+	float lat = half_to_lat(DEINTERLEAVE_HALF(gq)) + GEOQUAD_STEP;
+	return (gq & INTER32M) | INTERLEAVE_HALF(lat_to_16(lat));
 }
-
-
 
 static PyObject*
 geoquad_create(PyObject *self, PyObject *args)
