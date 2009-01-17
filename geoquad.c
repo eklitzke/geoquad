@@ -73,9 +73,15 @@ static inline uint16_t lat_to_16(float lat)
 	return (uint16_t) ((lat - LATITUDE_MIN) / GEOQUAD_STEP);
 }
 
-static inline uint32_t quad_rightof(uint32_t gq)
+static inline uint32_t quad_northof(uint32_t gq)
 {
 	float lat = half_to_lat(DEINTERLEAVE_HALF(gq)) + GEOQUAD_STEP;
+	return (gq & INTER32M) | INTERLEAVE_HALF(lat_to_16(lat));
+}
+
+static inline uint32_t quad_southof(uint32_t gq)
+{
+	float lat = half_to_lat(DEINTERLEAVE_HALF(gq)) - GEOQUAD_STEP;
 	return (gq & INTER32M) | INTERLEAVE_HALF(lat_to_16(lat));
 }
 
@@ -140,7 +146,8 @@ geoquad_nearby(PyObject *self, PyObject *args)
 static PyMethodDef geoquad_methods[] = {
 	{ "create", (PyCFunction) geoquad_create, METH_VARARGS, "create a geoquad from a (lng, lat)" },
 	{ "parse", (PyCFunction) geoquad_parse, METH_VARARGS, "parse a geoquad, returns a (lng, lat)" },
-	{ "rightof", (PyCFunction) geoquad_rightof, METH_VARARGS, "rightof a geoquad, returns a (lng, lat)" },
+	{ "northof", (PyCFunction) geoquad_northof, METH_VARARGS, "north of a geoquad, returns a (lng, lat)" },
+	{ "southof", (PyCFunction) geoquad_southof, METH_VARARGS, "south of a geoquad, returns a (lng, lat)" },
 	{ NULL }
 };
 
