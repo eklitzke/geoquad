@@ -73,6 +73,14 @@ static inline uint16_t lat_to_half(float lat)
 	return (uint16_t) ((lat - LATITUDE_MIN) / GEOQUAD_STEP);
 }
 
+/***************************
+ * DIRECTIONAL FUNCTIONS
+ *
+ * These all take a qeoquad and return another geoquad north, south, east or
+ * west of the given geoquad. These functions are much faster than parsing and
+ * recreating a geoquad.
+ **************************/
+
 static inline uint32_t quad_northof(uint32_t gq)
 {
 	uint16_t lng = deinterleave_half(gq >> 1);
@@ -139,19 +147,64 @@ geoquad_parse(PyObject *self, PyObject *args)
 /* Define Python functions for northof, southof, eastof, and westof from the
  * corresponding quad_Xof functions.
  */
-#define GEOQUAD_DIROF(x)\
+#define GEOQUAD_DIROF(dir)\
 	static PyObject*\
-	geoquad_##x##of(PyObject *self, PyObject *args)\
+	geoquad_##dir##of(PyObject *self, PyObject *args)\
 	{\
 		long geoquad;\
 		if (!PyArg_ParseTuple(args, "l", &geoquad))\
 			return NULL;\
-		return PyInt_FromLong((long) quad_##x##of((uint32_t) geoquad));\
+		return PyInt_FromLong((long) quad_##dir##of((uint32_t) geoquad));\
 	}
-GEOQUAD_DIROF(north);
-GEOQUAD_DIROF(south);
-GEOQUAD_DIROF(east);
-GEOQUAD_DIROF(west);
+GEOQUAD_DIROF(north)
+GEOQUAD_DIROF(south)
+GEOQUAD_DIROF(east)
+GEOQUAD_DIROF(west)
+
+/*******************************
+ * COMPUTING NEARBY GEOQUADS
+ *
+ * This describes the case of a large circle and small squares (i.e. radius is
+ * large compared to any geoquad). This looks like this:
+ *
+ *
+ *      +-------+
+ * ---__|       |
+ *      |'.     |
+ *      |  \    |
+ *      +---\---+
+ *           .
+ *           |
+ *           '
+ *
+ * Now in this situation, the corner of the geoquad is inside of the circle.
+ * Since this corner also belongs to the geoquad west and south of the
+ * geoquad, those geoquads have at least one point in the circle and therefore
+ * they are contained within the circle as well. The geoquads north and east
+ * of the geoquad cannot be in the circle.
+ *
+ * Sometimes two or three corners will in the circle, i.e.
+ *
+ * ---__                    ----__
+ *       '.                  +-----'.+
+ *      +--\----+            |       \
+ *      |   \   |            |       |\
+ *      |    .  |  or        |       | .
+ *      |    |  |            +-------+ |
+ *      +----'--+                      '
+ *          /
+ *
+ * In these situations three or four of the adjacent neighbors will be within
+ * the circle (instead of two neighbors, as above).
+ *
+ * Using this property, to find the geoquads that are inside of a circle, we
+ * do something like this:
+ *  1) Find a geoquad along the edge of the circle (by convention, get the one
+ *     due north of the circle's center)
+ *  2) Travel along the edge filling in edge geoquads
+ *  3) Once we have returned to the original geoquad, the circle is complete.
+ *     Fill in all of the "missing" geoquads from the interior of the circle.
+ */
 
 #if 0
 static PyObject*
