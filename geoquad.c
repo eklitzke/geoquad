@@ -75,14 +75,26 @@ static inline uint16_t lat_to_half(float lat)
 
 static inline uint32_t quad_northof(uint32_t gq)
 {
-	float lat = half_to_lat(deinterleave_half(gq)) + GEOQUAD_STEP;
-	return (gq & INTER32M) | interleave_half(lat_to_half(lat));
+	uint16_t lng = deinterleave_half(gq >> 1);
+	return (gq & INTER32L) | (interleave_half(lng + 1) << 1);
 }
 
 static inline uint32_t quad_southof(uint32_t gq)
 {
-	float lat = half_to_lat(deinterleave_half(gq)) - GEOQUAD_STEP;
-	return (gq & INTER32M) | interleave_half(lat_to_half(lat));
+	uint16_t lng = deinterleave_half(gq >> 1);
+	return (gq & INTER32L) | (interleave_half(lng - 1) << 1);
+}
+
+static inline uint32_t quad_eastof(uint32_t gq)
+{
+	uint16_t lat = deinterleave_half(gq);
+	return (gq & INTER32M) | interleave_half(lat + 1);
+}
+
+static inline uint32_t quad_westof(uint32_t gq)
+{
+	uint16_t lat = deinterleave_half(gq);
+	return (gq & INTER32M) | interleave_half(lat - 1);
 }
 
 static PyObject*
@@ -124,14 +136,22 @@ geoquad_parse(PyObject *self, PyObject *args)
 	return ret;
 }
 
-static PyObject*
-geoquad_northof(PyObject *self, PyObject *args)
-{
-	long geoquad;
-	if (!PyArg_ParseTuple(args, "l", &geoquad))
-		return NULL;
-	return PyInt_FromLong((long) quad_northof((uint32_t) geoquad));
-}
+/* Define Python functions for northof, southof, eastof, and westof from the
+ * corresponding quad_Xof functions.
+ */
+#define GEOQUAD_DIROF(x)\
+	static PyObject*\
+	geoquad_##x##of(PyObject *self, PyObject *args)\
+	{\
+		long geoquad;\
+		if (!PyArg_ParseTuple(args, "l", &geoquad))\
+			return NULL;\
+		return PyInt_FromLong((long) quad_##x##of((uint32_t) geoquad));\
+	}
+GEOQUAD_DIROF(north);
+GEOQUAD_DIROF(south);
+GEOQUAD_DIROF(east);
+GEOQUAD_DIROF(west);
 
 #if 0
 static PyObject*
@@ -147,12 +167,21 @@ static PyMethodDef geoquad_methods[] = {
 	{ "create", (PyCFunction) geoquad_create, METH_VARARGS, "create a geoquad from a (lng, lat)" },
 	{ "parse", (PyCFunction) geoquad_parse, METH_VARARGS, "parse a geoquad, returns a (lng, lat)" },
 	{ "northof", (PyCFunction) geoquad_northof, METH_VARARGS, "north of a geoquad, returns a (lng, lat)" },
-	//{ "southof", (PyCFunction) quad_southof, METH_VARARGS, "south of a geoquad, returns a (lng, lat)" },
+	{ "southof", (PyCFunction) geoquad_southof, METH_VARARGS, "south of a geoquad, returns a (lng, lat)" },
+	{ "eastof", (PyCFunction) geoquad_eastof, METH_VARARGS, "east of a geoquad, returns a (lng, lat)" },
+	{ "westof", (PyCFunction) geoquad_westof, METH_VARARGS, "west of a geoquad, returns a (lng, lat)" },
 	{ NULL }
 };
 
 PyMODINIT_FUNC initgeoquad(void)
 {
 	PyObject *m = Py_InitModule3("geoquad", geoquad_methods, "test");
+
+	/* TODO: error checking */
+	PyObject_SetAttrString(m, "LONGITUDE_MIN", PyFloat_FromDouble(LONGITUDE_MIN));
+	PyObject_SetAttrString(m, "LONGITUDE_MAX", PyFloat_FromDouble(LONGITUDE_MAX));
+	PyObject_SetAttrString(m, "LATITUDE_MIN", PyFloat_FromDouble(LATITUDE_MIN));
+	PyObject_SetAttrString(m, "LATITUDE_MAX", PyFloat_FromDouble(LATITUDE_MAX));
+	PyObject_SetAttrString(m, "GEOQUAD_STEP", PyFloat_FromDouble(GEOQUAD_STEP));
 }
 /* vim: set ts=4 sw=4 tw=78 noet: */
