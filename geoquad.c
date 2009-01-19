@@ -3,6 +3,7 @@
 #include "data.h"
 #include <stdio.h>
 #include <stdint.h>
+#include <math.h>
 
 #include <stdlib.h>
 
@@ -206,14 +207,70 @@ GEOQUAD_DIROF(west)
  *     Fill in all of the "missing" geoquads from the interior of the circle.
  */
 
-#if 0
+/* This creates a Python list object containing a list of geoquads. The
+ * interpretation of the return result and of the arguments is as follows:
+ *
+ * Suppose we have a circle like this:   ###
+ *                                      #   #  <----- @top
+ *                                      #   #  <----- @bot
+ *                                       ###
+ * @top should be a list of all of the geoquads on the top half of the circle,
+ * and @bot should be a list of all of the geoquads on the bottom half of the
+ * circle. If there is an odd number of geoquads north to south then at least
+ * one geoquad should be in both @top and @bot.
+ *
+ * This function goes through and creates a Python list object containing all
+ * of the geoquads in the circle by using the fast quad_southof function.
+ */
+static PyObject*
+fill_nearby_list(uint32_t top[], uint32_t bot[], size_t len)
+{
+	int i;
+	uint32_t t, b;
+	PyObject *g, gs;
+	gs = PyList_New(0); /* FIXME */
+
+	for (i = 0; i < len; i++) {
+		t = top[i];
+		b = bot[i];
+
+		/* Append the top geoquad to the list. */
+		if (!(g = PyInt_FromLong((long) t)))
+			return NULL;
+		if (PyList_Append(gs, g))
+			return NULL;
+
+		while (t != b) {
+			t = quad_southof(t)
+			if (!(g = PyInt_FromLong((long) t)))
+				return NULL;
+			if (PyList_Append(gs, g))
+				return NULL;
+		}
+	}
+	return gs;
+}
+
 static PyObject*
 geoquad_nearby(PyObject *self, PyObject *args)
 {
 	long geoquad;
 	float radius;
+	uint16_t lng, lat;
+	int count = 0;
 	if (!PyArg_ParseTuple(args, "lf", &geoquad, &radius))
 		return NULL;
+	
+	/* Parse the geoquad into a lng, lat and compute the easternmost
+	 * encompassing geoquad.
+	 *
+	 * FIXME: we might be off by one w/o the lat/lng conversion, is there a
+	 * way to fix that? Skipping it would be faster. */
+
+	deinterleave_full((uint32_t) geoquad, &lng, &lat);
+	lng = deinterleave_half(geoquad);
+	lng += (uint16_t) ceil(radius / GEOQUADSTEP);
+
 #endif
 
 static PyMethodDef geoquad_methods[] = {
