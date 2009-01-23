@@ -50,10 +50,8 @@ class Geoquadtester(RatioTestCase):
 	def test_nearby(self):
 		lat, lng = (10, 20)
 		g = geoquad.create(lat, lng)
-		print '%d nearby' % len(geoquad.nearby(g, 0.1)) # about 7 miles in diameter
-		print geoquad.nearby(g, 0.1) # about 7 miles in diameter
-		print geoquad.nearby(g, 0.2) # about 7 miles in diameter
-		print '%d nearby' % len(geoquad.nearby(g, 2))
+		assert len(geoquad.nearby(g, 0.1)) == 14
+		assert len(geoquad.nearby(g, 0.5)) == 309
 
 if __name__ == '__main__':
 	unittest.main()
