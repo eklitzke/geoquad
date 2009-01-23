@@ -46,6 +46,12 @@ class Geoquadtester(RatioTestCase):
 		lat_, lng_ = geoquad.parse(g2)
 		self.assertAlmostEqual(lat, lat_)
 		self.assertAlmostEqual(lng - geoquad.GEOQUAD_STEP, lng_)
+	
+	def test_nearby(self):
+		lat, lng = (10, 20)
+		g = geoquad.create(lat, lng)
+		print '%d nearby' % len(geoquad.nearby(g, 1))
+		print '%d nearby' % len(geoquad.nearby(g, 2))
 
 if __name__ == '__main__':
 	unittest.main()

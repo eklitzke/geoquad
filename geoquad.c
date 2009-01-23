@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <math.h>
+#include <assert.h>
 
 #include <stdlib.h>
 
@@ -30,7 +31,7 @@ struct quad_s
 };
 
 /* A half interleave/ */
-static inline uint32_t interleave_half(uint16_t x)
+static const inline uint32_t interleave_half(uint16_t x)
 {
 	return (morton_forward[x >> 8] << 16) | morton_forward[x & 0xFF];
 }
@@ -223,15 +224,17 @@ GEOQUAD_DIROF(west)
  * of the geoquads in the circle by using the fast quad_southof function.
  */
 static PyObject*
-fill_nearby_list(uint32_t top[], uint32_t bot[], size_t len)
+fill_nearby_list(uint16_t top[], uint16_t bot[], uint16_t lng_w, size_t len)
 {
 	int i;
 	uint32_t t, b;
-	PyObject *g, gs;
+	uint16_t lng;
+	PyObject *g, *gs;
 	gs = PyList_New(0); /* FIXME */
 
+	lng = lng_w;
 	for (i = 0; i < len; i++) {
-		t = top[i];
+		t = interleave_full(lng, top[i]);
 		b = bot[i];
 
 		/* Append the top geoquad to the list. */
@@ -240,26 +243,54 @@ fill_nearby_list(uint32_t top[], uint32_t bot[], size_t len)
 		if (PyList_Append(gs, g))
 			return NULL;
 
-		while (t != b) {
-			t = quad_southof(t)
+		while (deinterleave_half(t >> 1) != b) {
+			t = quad_southof(t);
 			if (!(g = PyInt_FromLong((long) t)))
 				return NULL;
 			if (PyList_Append(gs, g))
 				return NULL;
 		}
+		lng++;
 	}
 	return gs;
+}
+
+/* FIXME: too many arguments */
+static inline int
+quad_within_radius(float lat, float lng, float lat_c, float lng_c, float radius_sq)
+{
+	float delta_lat, delta_lng;
+	delta_lat = lat - lat_c;
+	delta_lng = lng - lng_c;
+	return (delta_lat * delta_lat + delta_lng * delta_lng) <= radius_sq;
+}
+
+static inline int
+check_se_corner(float lat, float lng, float lat_c, float lng_c, float radius_sq)
+{
+	float delta_lat, delta_lng;
+	delta_lat = lat - GEOQUAD_STEP * 0.5 - lat_c;
+	delta_lng = lat + GEOQUAD_STEP * 0.5 - lng_c;
+	return (delta_lat * delta_lat + delta_lng * delta_lng) <= radius_sq;
 }
 
 static PyObject*
 geoquad_nearby(PyObject *self, PyObject *args)
 {
 	long geoquad;
-	float radius;
-	uint16_t lng, lat;
+	const float radius;
+	float radius_sq;
+	float f_lng_orig, f_lat_orig, f_lng, f_lat;
+	uint16_t lng_w, lng_e;
+	uint16_t lng, lat, lng_orig, lat_orig;
 	int count = 0;
+
+	uint16_t northern_quads[500]; /* FIXME */
+	uint16_t southern_quads[500]; /* FIXME */
+
 	if (!PyArg_ParseTuple(args, "lf", &geoquad, &radius))
 		return NULL;
+	radius_sq = radius * radius;
 	
 	/* Parse the geoquad into a lng, lat and compute the easternmost
 	 * encompassing geoquad.
@@ -268,10 +299,69 @@ geoquad_nearby(PyObject *self, PyObject *args)
 	 * way to fix that? Skipping it would be faster. */
 
 	deinterleave_full((uint32_t) geoquad, &lng, &lat);
-	lng = deinterleave_half(geoquad);
-	lng += (uint16_t) ceil(radius / GEOQUADSTEP);
+	lat_orig = lat;
+	lng_orig = lng;
 
-#endif
+	f_lng_orig = half_to_lng(lng);
+	f_lat_orig = half_to_lat(lat);
+
+	/* Get the westernmost geoquad */
+	lng_w = lng - (uint16_t) ceil(radius / GEOQUAD_STEP);
+
+	f_lng = half_to_lng(lng_w);
+
+	while ((f_lng - 0.5 * GEOQUAD_STEP) > (f_lng_orig - radius)) {
+		count++;
+		printf("[init] needed to go west %d times...\n", count);
+		lng_w--;
+		f_lng = half_to_lng(lng_w);
+	}
+
+	printf("[init] west side in circle? (should be 0) %d\n", (f_lng - 0.5 * GEOQUAD_STEP) < (f_lng_orig - radius));
+	printf("[init] east side in circle? (should be 1) %d\n", (f_lng + 0.5 * GEOQUAD_STEP) < (f_lng_orig - radius));
+
+	/* Get the easternmost quad */
+	lng_e = lng + (uint16_t) floor(radius / GEOQUAD_STEP);
+
+	f_lng = half_to_lng(lng_e);
+
+	while ((f_lng + 0.5 * GEOQUAD_STEP) < (f_lng_orig + radius)) {
+		count++;
+		printf("[init] needed to go east %d times...\n", count);
+		lng_e++;
+		f_lng = half_to_lng(lng_e);
+	}
+
+	printf("[init] west side in circle? (should be 1) %d\n", (f_lng - 0.5 * GEOQUAD_STEP) < (f_lng_orig + radius));
+	printf("[init] east side in circle? (should be 0) %d\n", (f_lng + 0.5 * GEOQUAD_STEP) < (f_lng_orig + radius));
+
+	count = 0;
+	for (lng = lng_w; lng <= lng_e; lng++) {
+		lat = lat_orig;
+		f_lng = half_to_lng(lng);
+		f_lat = half_to_lat(lat);
+		while (quad_within_radius(f_lat, f_lng, f_lat_orig, f_lng_orig, radius_sq)) {
+			lat++;
+			f_lat = half_to_lat(lat);
+		}
+		lat--;
+		northern_quads[count] = lat;
+
+		lat = lat_orig;
+		f_lat = half_to_lat(lat);
+		while (quad_within_radius(f_lat, f_lng, f_lat_orig, f_lng_orig, radius_sq)) {
+			lat--;
+			f_lat = half_to_lat(lat);
+		}
+		lat++;
+		southern_quads[count] = lat;
+
+		count++;
+	}
+
+	printf("filling nearby\n");
+	return fill_nearby_list(northern_quads, southern_quads, lng_w, lng_e - lng_w);
+}
 
 static PyMethodDef geoquad_methods[] = {
 	{ "create", (PyCFunction) geoquad_create, METH_VARARGS, "create a geoquad from a (lng, lat)" },
@@ -280,6 +370,7 @@ static PyMethodDef geoquad_methods[] = {
 	{ "southof", (PyCFunction) geoquad_southof, METH_VARARGS, "south of a geoquad, returns a (lng, lat)" },
 	{ "eastof", (PyCFunction) geoquad_eastof, METH_VARARGS, "east of a geoquad, returns a (lng, lat)" },
 	{ "westof", (PyCFunction) geoquad_westof, METH_VARARGS, "west of a geoquad, returns a (lng, lat)" },
+	{ "nearby", (PyCFunction) geoquad_nearby, METH_VARARGS, "get nearby geoquads, returns a list of geoquads" },
 	{ NULL }
 };
 
