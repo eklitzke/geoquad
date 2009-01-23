@@ -227,25 +227,31 @@ static PyObject*
 fill_nearby_list(uint16_t top[], uint16_t bot[], uint16_t lng_w, size_t len)
 {
 	int i;
-	uint32_t t, b;
+	uint16_t t, b;
+	uint32_t q;
 	uint16_t lng;
 	PyObject *g, *gs;
 	gs = PyList_New(0); /* FIXME */
 
 	lng = lng_w;
 	for (i = 0; i < len; i++) {
-		t = interleave_full(lng, top[i]);
+		t = top[i];
 		b = bot[i];
 
+		q = interleave_full(lng, t);
+
 		/* Append the top geoquad to the list. */
-		if (!(g = PyInt_FromLong((long) t)))
+		if (!(g = PyInt_FromLong((long) q)))
 			return NULL;
 		if (PyList_Append(gs, g))
 			return NULL;
 
-		while (deinterleave_half(t >> 1) != b) {
-			t = quad_southof(t);
-			if (!(g = PyInt_FromLong((long) t)))
+		while (t > b) {
+			q &= INTER32L;
+			t--;
+			q |= (interleave_half(t) << 1);
+
+			if (!(g = PyInt_FromLong((long) q)))
 				return NULL;
 			if (PyList_Append(gs, g))
 				return NULL;
@@ -312,13 +318,17 @@ geoquad_nearby(PyObject *self, PyObject *args)
 
 	while ((f_lng - 0.5 * GEOQUAD_STEP) > (f_lng_orig - radius)) {
 		count++;
+#if 0
 		printf("[init] needed to go west %d times...\n", count);
+#endif
 		lng_w--;
 		f_lng = half_to_lng(lng_w);
 	}
 
-	printf("[init] west side in circle? (should be 0) %d\n", (f_lng - 0.5 * GEOQUAD_STEP) < (f_lng_orig - radius));
-	printf("[init] east side in circle? (should be 1) %d\n", (f_lng + 0.5 * GEOQUAD_STEP) < (f_lng_orig - radius));
+#if 0
+	printf("[init] west side in circle? (should be 0) %d\n", (f_lng - 0.5 * GEOQUAD_STEP) <= (f_lng_orig - radius));
+	printf("[init] east side in circle? (should be 1) %d\n", (f_lng + 0.5 * GEOQUAD_STEP) <= (f_lng_orig - radius));
+#endif
 
 	/* Get the easternmost quad */
 	lng_e = lng + (uint16_t) floor(radius / GEOQUAD_STEP);
@@ -327,13 +337,17 @@ geoquad_nearby(PyObject *self, PyObject *args)
 
 	while ((f_lng + 0.5 * GEOQUAD_STEP) < (f_lng_orig + radius)) {
 		count++;
+#if 0
 		printf("[init] needed to go east %d times...\n", count);
+#endif
 		lng_e++;
 		f_lng = half_to_lng(lng_e);
 	}
 
+#if 0
 	printf("[init] west side in circle? (should be 1) %d\n", (f_lng - 0.5 * GEOQUAD_STEP) < (f_lng_orig + radius));
 	printf("[init] east side in circle? (should be 0) %d\n", (f_lng + 0.5 * GEOQUAD_STEP) < (f_lng_orig + radius));
+#endif
 
 	count = 0;
 	for (lng = lng_w; lng <= lng_e; lng++) {
@@ -359,8 +373,8 @@ geoquad_nearby(PyObject *self, PyObject *args)
 		count++;
 	}
 
-	printf("filling nearby\n");
-	return fill_nearby_list(northern_quads, southern_quads, lng_w, lng_e - lng_w);
+	printf("filling nearby, len = %d [%d..%d]\n", lng_e - lng_w + 1, lng_w, lng_e);
+	return fill_nearby_list(northern_quads, southern_quads, lng_w, lng_e - lng_w + 1);
 }
 
 static PyMethodDef geoquad_methods[] = {
