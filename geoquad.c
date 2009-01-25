@@ -112,9 +112,28 @@ geoquad_create(PyObject *self, PyObject *args)
 {
 	uint16_t i, j;
 	uint32_t result;
+	char *err_msg;
 	float lng, lat;
 	if (!PyArg_ParseTuple(args, "ff", &lat, &lng))
 		return NULL;
+	if ((lat < LATITUDE_MIN) || (lat > LATITUDE_MAX)) {
+		err_msg = PyMem_Malloc(128);
+		if (!err_msg)
+			return PyErr_NoMemory();
+		sprintf(err_msg, "Invalid latitude (%1.2f); should be in range [%3.1f, %3.1f]", lat, LATITUDE_MIN, LATITUDE_MAX);
+		PyErr_SetString(PyExc_ValueError, err_msg);
+		PyMem_Free(err_msg);
+		return NULL;
+	}
+	if ((lng < LONGITUDE_MIN) || (lng > LONGITUDE_MAX)) {
+		err_msg = PyMem_Malloc(128);
+		if (!err_msg)
+			return PyErr_NoMemory();
+		sprintf(err_msg, "Invalid longitude (%1.2f); should be in range [%3.1f, %3.1f]", lng, LONGITUDE_MIN, LONGITUDE_MAX);
+		PyErr_SetString(PyExc_ValueError, err_msg);
+		PyMem_Free(err_msg);
+		return NULL;
+	}
 	i = (uint16_t) ((lat - LONGITUDE_MIN) / GEOQUAD_STEP);
 	j = (uint16_t) ((lng - LATITUDE_MIN) / GEOQUAD_STEP);
 
