@@ -110,15 +110,15 @@ static inline uint32_t quad_westof(uint32_t gq)
 static PyObject*
 geoquad_create(PyObject *self, PyObject *args)
 {
-	uint16_t i, j;
+	uint16_t normal_lat, normal_lng;
 	uint32_t result;
 	char *err_msg;
 	float lng, lat;
 	if (!PyArg_ParseTuple(args, "ff", &lat, &lng))
 		return NULL;
+
 	if ((lat < LATITUDE_MIN) || (lat > LATITUDE_MAX)) {
-		err_msg = PyMem_Malloc(128);
-		if (!err_msg)
+		if (!(err_msg = PyMem_Malloc(128)))
 			return PyErr_NoMemory();
 		sprintf(err_msg, "Invalid latitude (%1.2f); should be in range [%3.1f, %3.1f]", lat, LATITUDE_MIN, LATITUDE_MAX);
 		PyErr_SetString(PyExc_ValueError, err_msg);
@@ -126,19 +126,17 @@ geoquad_create(PyObject *self, PyObject *args)
 		return NULL;
 	}
 	if ((lng < LONGITUDE_MIN) || (lng > LONGITUDE_MAX)) {
-		err_msg = PyMem_Malloc(128);
-		if (!err_msg)
+		if (!(err_msg = PyMem_Malloc(128)))
 			return PyErr_NoMemory();
 		sprintf(err_msg, "Invalid longitude (%1.2f); should be in range [%3.1f, %3.1f]", lng, LONGITUDE_MIN, LONGITUDE_MAX);
 		PyErr_SetString(PyExc_ValueError, err_msg);
 		PyMem_Free(err_msg);
 		return NULL;
 	}
-	i = (uint16_t) ((lat - LONGITUDE_MIN) / GEOQUAD_STEP);
-	j = (uint16_t) ((lng - LATITUDE_MIN) / GEOQUAD_STEP);
+	normal_lat = (uint16_t) ((lat - LATITUDE_MIN) / GEOQUAD_STEP);
+	normal_lng = (uint16_t) ((lng - LONGITUDE_MIN) / GEOQUAD_STEP);
 
-	/* yes this is backwards. don't ask */
-	result = interleave_full(j, i);
+	result = interleave_full(normal_lat, normal_lng);
 	return PyInt_FromLong((long) result);
 }
 
@@ -390,12 +388,12 @@ geoquad_nearby(PyObject *self, PyObject *args)
 }
 
 static PyMethodDef geoquad_methods[] = {
-	{ "create", (PyCFunction) geoquad_create, METH_VARARGS, "create a geoquad from a (lng, lat)" },
-	{ "parse", (PyCFunction) geoquad_parse, METH_VARARGS, "parse a geoquad, returns a (lng, lat)" },
-	{ "northof", (PyCFunction) geoquad_northof, METH_VARARGS, "north of a geoquad, returns a (lng, lat)" },
-	{ "southof", (PyCFunction) geoquad_southof, METH_VARARGS, "south of a geoquad, returns a (lng, lat)" },
-	{ "eastof", (PyCFunction) geoquad_eastof, METH_VARARGS, "east of a geoquad, returns a (lng, lat)" },
-	{ "westof", (PyCFunction) geoquad_westof, METH_VARARGS, "west of a geoquad, returns a (lng, lat)" },
+	{ "create", (PyCFunction) geoquad_create, METH_VARARGS, "create a geoquad from a (lat, lng)" },
+	{ "parse", (PyCFunction) geoquad_parse, METH_VARARGS, "parse a geoquad, returns a (lat, lng)" },
+	{ "northof", (PyCFunction) geoquad_northof, METH_VARARGS, "returns the geoquad directly north of a given geoquad" },
+	{ "southof", (PyCFunction) geoquad_southof, METH_VARARGS, "returns the geoquad directly south of a given geoquad" },
+	{ "eastof", (PyCFunction) geoquad_eastof, METH_VARARGS, "returns the geoquad directly east of a given geoquad" },
+	{ "westof", (PyCFunction) geoquad_westof, METH_VARARGS, "returns the geoquad directly west of a given geoquad" },
 	{ "nearby", (PyCFunction) geoquad_nearby, METH_VARARGS, "get nearby geoquads, returns a list of geoquads" },
 	{ NULL }
 };
