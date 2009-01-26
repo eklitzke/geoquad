@@ -13,7 +13,7 @@
 #define LATITUDE_MIN    -90.0
 #define LATITUDE_MAX     90.0
 
-/* Unfortuntately, in C we have (1 / 0.05 ) != 20
+/* Unfortunately, in C we have (1 / 0.05 ) != 20
  * This causes incompatibilites with the current Python code.
  */
 #define GEOQUAD_STEP     0.05
@@ -54,12 +54,12 @@ static inline void deinterleave_full(uint32_t z, uint16_t *x, uint16_t *y)
 
 static inline double half_to_lng(uint16_t lng16)
 {
-	return (((double) lng16) * GEOQUAD_STEP) + LONGITUDE_MIN;
+	return (lng16 * GEOQUAD_STEP) + LONGITUDE_MIN;
 }
 
 static inline double half_to_lat(uint16_t lat16)
 {
-	return (((double) lat16) * GEOQUAD_STEP) + LATITUDE_MIN;
+	return (lat16 * GEOQUAD_STEP) + LATITUDE_MIN;
 }
 
 static inline uint16_t lng_to_half(double lng)
@@ -141,7 +141,7 @@ geoquad_create(PyObject *self, PyObject *args)
 static PyObject*
 geoquad_parse(PyObject *self, PyObject *args)
 {
-	uint16_t i, j;
+	uint16_t half_lat, half_lng;
 	double lng, lat;
 	long geoquad;
 	PyObject *ret;
@@ -152,16 +152,16 @@ geoquad_parse(PyObject *self, PyObject *args)
 	if ((ret = PyTuple_New(2)) == NULL)
 		return NULL;
 
-	deinterleave_full((uint32_t) geoquad, &i, &j);
-	lat = ((i * GEOQUAD_STEP) + LATITUDE_MIN);
-	lng = ((j * GEOQUAD_STEP) + LONGITUDE_MIN);
+	deinterleave_full((uint32_t) geoquad, &half_lat, &half_lng);
+	lat = ((half_lat * GEOQUAD_STEP) + LATITUDE_MIN);
+	lng = ((half_lng * GEOQUAD_STEP) + LONGITUDE_MIN);
 
-	PyTuple_SetItem(ret, 0, PyFloat_FromDouble(lng));
-	PyTuple_SetItem(ret, 1, PyFloat_FromDouble(lat));
+	PyTuple_SetItem(ret, 0, PyFloat_FromDouble(lat));
+	PyTuple_SetItem(ret, 1, PyFloat_FromDouble(lng));
 	return ret;
 }
 
-static PyObject *
+static PyObject*
 geoquad_center(PyObject *self, PyObject *args)
 {
 	uint16_t half_lat, half_lng;
@@ -179,9 +179,31 @@ geoquad_center(PyObject *self, PyObject *args)
 	lat = ((half_lat * GEOQUAD_STEP) + LATITUDE_MIN) + GEOQUAD_STEP / 2;
 	lng = ((half_lng * GEOQUAD_STEP) + LONGITUDE_MIN) + GEOQUAD_STEP / 2;
 
-	PyTuple_SetItem(ret, 0, PyFloat_FromDouble(lng));
-	PyTuple_SetItem(ret, 1, PyFloat_FromDouble(lat));
+	PyTuple_SetItem(ret, 0, PyFloat_FromDouble(lat));
+	PyTuple_SetItem(ret, 1, PyFloat_FromDouble(lng));
 	return ret;
+}
+
+static PyObject*
+geoquad_contains(PyObject *self, PyObject *args)
+{
+	uint16_t half_lat, half_lng;
+	const long geoquad;
+	const double in_lng, in_lat;
+	double lng, lat;
+	PyObject *ret;
+
+	if (!PyArg_ParseTuple(args, "ldd", &geoquad, &in_lat, &in_lng))
+		return NULL;
+
+	if ((ret = PyTuple_New(2)) == NULL)
+		return NULL;
+
+	deinterleave_full((uint32_t) geoquad, &half_lat, &half_lng);
+	lat = ((half_lat * GEOQUAD_STEP) + LATITUDE_MIN) + GEOQUAD_STEP / 2;
+	lng = ((half_lng * GEOQUAD_STEP) + LONGITUDE_MIN) + GEOQUAD_STEP / 2;
+
+	return PyBool_FromLong((lat <= in_lat) && ((lat + GEOQUAD_STEP) > in_lat) && (lng <= in_lng) && ((lng + GEOQUAD_STEP) > in_lng));
 }
 
 /* Define Python functions for northof, southof, eastof, and westof from the
@@ -412,6 +434,7 @@ static PyMethodDef geoquad_methods[] = {
 	{ "create", (PyCFunction) geoquad_create, METH_VARARGS, "create a geoquad from a (lat, lng)" },
 	{ "parse", (PyCFunction) geoquad_parse, METH_VARARGS, "SW corner of a geoquad, returns a (lat, lng)" },
 	{ "center", (PyCFunction) geoquad_center, METH_VARARGS, "center of a geoquad, returns a (lat, lng)" },
+	{ "contains", (PyCFunction) geoquad_contains, METH_VARARGS, "whether or not a geoquad contaings a lng, lat" },
 	{ "northof", (PyCFunction) geoquad_northof, METH_VARARGS, "returns the geoquad directly north of a given geoquad" },
 	{ "southof", (PyCFunction) geoquad_southof, METH_VARARGS, "returns the geoquad directly south of a given geoquad" },
 	{ "eastof", (PyCFunction) geoquad_eastof, METH_VARARGS, "returns the geoquad directly east of a given geoquad" },

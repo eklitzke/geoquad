@@ -12,8 +12,7 @@ class Geoquadtester(RatioTestCase):
 		lat, lng = (10, 20)
 		g = geoquad.create(lat, lng)
 		lat_, lng_ = geoquad.parse(g)
-		self.assertAlmostEqual(lat, lat_)
-		self.assertAlmostEqual(lng, lng_)
+		assert geoquad.contains(g, lat_, lng_)
 
 	def test_northof(self):
 		lat, lng = (10, 20)
