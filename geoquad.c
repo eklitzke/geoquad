@@ -200,8 +200,8 @@ geoquad_contains(PyObject *self, PyObject *args)
 		return NULL;
 
 	deinterleave_full((uint32_t) geoquad, &half_lat, &half_lng);
-	lat = ((half_lat * GEOQUAD_STEP) + LATITUDE_MIN) + GEOQUAD_STEP / 2;
-	lng = ((half_lng * GEOQUAD_STEP) + LONGITUDE_MIN) + GEOQUAD_STEP / 2;
+	lat = ((half_lat * GEOQUAD_STEP) + LATITUDE_MIN);
+	lng = ((half_lng * GEOQUAD_STEP) + LONGITUDE_MIN);
 
 	return PyBool_FromLong((lat <= in_lat) && ((lat + GEOQUAD_STEP) > in_lat) && (lng <= in_lng) && ((lng + GEOQUAD_STEP) > in_lng));
 }

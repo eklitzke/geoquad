@@ -6,10 +6,10 @@ class RatioTestCase(unittest.TestCase):
 		assert abs(a - b) < min(a, b) * (1 - precision), '%1.4f !~ %1.4f [precision = %1.3f]' % (a, b, precision)
 	assertAlmostEquals = assertAlmostEqual
 
-class Geoquadtester(RatioTestCase):
+class GeoquadTestCase(RatioTestCase):
 
 	def test_create_then_parse(self):
-		lat, lng = (10, 20)
+		lat, lng = (10.01, 20.01)
 		g = geoquad.create(lat, lng)
 		lat_, lng_ = geoquad.parse(g)
 		assert geoquad.contains(g, lat_, lng_)
@@ -19,33 +19,29 @@ class Geoquadtester(RatioTestCase):
 		g1 = geoquad.create(lat, lng)
 		g2 = geoquad.northof(g1)
 		lat_, lng_ = geoquad.parse(g2)
-		self.assertAlmostEqual(lng, lng_)
-		self.assertAlmostEqual(lat + geoquad.GEOQUAD_STEP, lat_)
+		assert geoquad.contains(g2, lat_, lng_)
 
 	def test_southof(self):
 		lat, lng = (10, 20)
 		g1 = geoquad.create(lat, lng)
 		g2 = geoquad.southof(g1)
 		lat_, lng_ = geoquad.parse(g2)
-		self.assertAlmostEqual(lng, lng_)
-		self.assertAlmostEqual(lat - geoquad.GEOQUAD_STEP, lat_)
+		assert geoquad.contains(g2, lat_, lng_)
 
 	def test_eastof(self):
 		lat, lng = (10, 20)
 		g1 = geoquad.create(lat, lng)
 		g2 = geoquad.eastof(g1)
 		lat_, lng_ = geoquad.parse(g2)
-		self.assertAlmostEqual(lat, lat_)
-		self.assertAlmostEqual(lng + geoquad.GEOQUAD_STEP, lng_)
+		assert geoquad.contains(g2, lat_, lng_)
 
 	def test_westof(self):
 		lat, lng = (10, 20)
 		g1 = geoquad.create(lat, lng)
 		g2 = geoquad.westof(g1)
 		lat_, lng_ = geoquad.parse(g2)
-		self.assertAlmostEqual(lat, lat_)
-		self.assertAlmostEqual(lng - geoquad.GEOQUAD_STEP, lng_)
-	
+		assert geoquad.contains(g2, lat_, lng)
+
 	def test_nearby(self):
 		lat, lng = (10, 20)
 		g = geoquad.create(lat, lng)
