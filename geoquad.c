@@ -12,7 +12,12 @@
 #define LONGITUDE_MAX   180.0
 #define LATITUDE_MIN    -90.0
 #define LATITUDE_MAX     90.0
+
+/* Unfortuntately, in C we have (1 / 0.05 ) != 20
+ * This causes incompatibilites with the current Python code.
+ */
 #define GEOQUAD_STEP     0.05
+#define GEOQUAD_INV      20
 
 /* Interleaved ones and zeroes, LSB = 1 */
 #define INTER16L 0x5555
@@ -21,14 +26,6 @@
 /* Interleaved ones and zeroes, MSB = 1 */
 #define INTER16M 0xAAAA
 #define INTER32M 0xAAAAAAAA
-
-struct quad_s
-{
-	float nw;
-	float ne;
-	float se;
-	float sw;
-};
 
 /* A half interleave/ */
 static const inline uint32_t interleave_half(uint16_t x)
@@ -55,24 +52,24 @@ static inline void deinterleave_full(uint32_t z, uint16_t *x, uint16_t *y)
 	*y = deinterleave_half(z>>1);
 }
 
-static inline float half_to_lng(uint16_t lng16)
+static inline double half_to_lng(uint16_t lng16)
 {
-	return (((float) lng16) * GEOQUAD_STEP) + LONGITUDE_MIN;
+	return (((double) lng16) * GEOQUAD_STEP) + LONGITUDE_MIN;
 }
 
-static inline float half_to_lat(uint16_t lat16)
+static inline double half_to_lat(uint16_t lat16)
 {
-	return (((float) lat16) * GEOQUAD_STEP) + LATITUDE_MIN;
+	return (((double) lat16) * GEOQUAD_STEP) + LATITUDE_MIN;
 }
 
-static inline uint16_t lng_to_half(float lng)
+static inline uint16_t lng_to_half(double lng)
 {
-	return (uint16_t) ((lng - LONGITUDE_MIN) / GEOQUAD_STEP);
+	return (uint16_t) ((lng - LONGITUDE_MIN) * GEOQUAD_INV);
 }
 
-static inline uint16_t lat_to_half(float lat)
+static inline uint16_t lat_to_half(double lat)
 {
-	return (uint16_t) ((lat - LATITUDE_MIN) / GEOQUAD_STEP);
+	return (uint16_t) ((lat - LATITUDE_MIN) * GEOQUAD_INV);
 }
 
 /***************************
@@ -113,8 +110,9 @@ geoquad_create(PyObject *self, PyObject *args)
 	uint16_t normal_lat, normal_lng;
 	uint32_t result;
 	char *err_msg;
-	float lng, lat;
-	if (!PyArg_ParseTuple(args, "ff", &lat, &lng))
+	double lng, lat;
+
+	if (!PyArg_ParseTuple(args, "dd", &lat, &lng))
 		return NULL;
 
 	if ((lat < LATITUDE_MIN) || (lat > LATITUDE_MAX)) {
@@ -133,8 +131,8 @@ geoquad_create(PyObject *self, PyObject *args)
 		PyMem_Free(err_msg);
 		return NULL;
 	}
-	normal_lat = (uint16_t) ((lat - LATITUDE_MIN) / GEOQUAD_STEP);
-	normal_lng = (uint16_t) ((lng - LONGITUDE_MIN) / GEOQUAD_STEP);
+	normal_lat = (uint16_t) ((lat - LATITUDE_MIN) * GEOQUAD_INV);
+	normal_lng = (uint16_t) ((lng - LONGITUDE_MIN) * GEOQUAD_INV);
 
 	result = interleave_full(normal_lat, normal_lng);
 	return PyInt_FromLong((long) result);
@@ -144,7 +142,7 @@ static PyObject*
 geoquad_parse(PyObject *self, PyObject *args)
 {
 	uint16_t i, j;
-	float lng, lat;
+	double lng, lat;
 	long geoquad;
 	PyObject *ret;
 
@@ -155,11 +153,34 @@ geoquad_parse(PyObject *self, PyObject *args)
 		return NULL;
 
 	deinterleave_full((uint32_t) geoquad, &i, &j);
-	lat = (float) ((i * GEOQUAD_STEP) + LATITUDE_MIN);
-	lng = (float) ((j * GEOQUAD_STEP) + LONGITUDE_MIN);
+	lat = ((i * GEOQUAD_STEP) + LATITUDE_MIN);
+	lng = ((j * GEOQUAD_STEP) + LONGITUDE_MIN);
 
-	PyTuple_SetItem(ret, 0, PyFloat_FromDouble((double) lng));
-	PyTuple_SetItem(ret, 1, PyFloat_FromDouble((double) lat));
+	PyTuple_SetItem(ret, 0, PyFloat_FromDouble(lng));
+	PyTuple_SetItem(ret, 1, PyFloat_FromDouble(lat));
+	return ret;
+}
+
+static PyObject *
+geoquad_center(PyObject *self, PyObject *args)
+{
+	uint16_t half_lat, half_lng;
+	double lng, lat;
+	long geoquad;
+	PyObject *ret;
+
+	if (!PyArg_ParseTuple(args, "l", &geoquad))
+		return NULL;
+
+	if ((ret = PyTuple_New(2)) == NULL)
+		return NULL;
+
+	deinterleave_full((uint32_t) geoquad, &half_lat, &half_lng);
+	lat = ((half_lat * GEOQUAD_STEP) + LATITUDE_MIN) + GEOQUAD_STEP / 2;
+	lng = ((half_lng * GEOQUAD_STEP) + LONGITUDE_MIN) + GEOQUAD_STEP / 2;
+
+	PyTuple_SetItem(ret, 0, PyFloat_FromDouble(lng));
+	PyTuple_SetItem(ret, 1, PyFloat_FromDouble(lat));
 	return ret;
 }
 
@@ -286,9 +307,9 @@ fill_nearby_list(uint16_t halves[], uint16_t lng_w, size_t len)
 
 /* FIXME: too many arguments */
 static inline int
-quad_within_radius(float lat, float lng, float lat_c, float lng_c, float radius_sq)
+quad_within_radius(double lat, double lng, double lat_c, double lng_c, double radius_sq)
 {
-	float delta_lat, delta_lng;
+	double delta_lat, delta_lng;
 	delta_lat = lat - lat_c;
 	delta_lng = lng - lng_c;
 	return (delta_lat * delta_lat + delta_lng * delta_lng) <= radius_sq;
@@ -298,9 +319,9 @@ static PyObject*
 geoquad_nearby(PyObject *self, PyObject *args)
 {
 	long geoquad;
-	const float radius;
-	float radius_sq;
-	float f_lng_orig, f_lat_orig, f_lng, f_lat;
+	const double radius;
+	double radius_sq;
+	double f_lng_orig, f_lat_orig, f_lng, f_lat;
 	uint16_t lng_w, lng_e;
 	uint16_t lng, lat, lng_orig, lat_orig;
 	size_t i, count;
@@ -308,7 +329,7 @@ geoquad_nearby(PyObject *self, PyObject *args)
 
 	uint16_t *halves;
 
-	if (!PyArg_ParseTuple(args, "lf", &geoquad, &radius))
+	if (!PyArg_ParseTuple(args, "ld", &geoquad, &radius))
 		return NULL;
 	radius_sq = radius * radius;
 	
@@ -389,7 +410,8 @@ geoquad_nearby(PyObject *self, PyObject *args)
 
 static PyMethodDef geoquad_methods[] = {
 	{ "create", (PyCFunction) geoquad_create, METH_VARARGS, "create a geoquad from a (lat, lng)" },
-	{ "parse", (PyCFunction) geoquad_parse, METH_VARARGS, "parse a geoquad, returns a (lat, lng)" },
+	{ "parse", (PyCFunction) geoquad_parse, METH_VARARGS, "SW corner of a geoquad, returns a (lat, lng)" },
+	{ "center", (PyCFunction) geoquad_center, METH_VARARGS, "center of a geoquad, returns a (lat, lng)" },
 	{ "northof", (PyCFunction) geoquad_northof, METH_VARARGS, "returns the geoquad directly north of a given geoquad" },
 	{ "southof", (PyCFunction) geoquad_southof, METH_VARARGS, "returns the geoquad directly south of a given geoquad" },
 	{ "eastof", (PyCFunction) geoquad_eastof, METH_VARARGS, "returns the geoquad directly east of a given geoquad" },
