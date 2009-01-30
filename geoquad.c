@@ -13,11 +13,14 @@
 #define LATITUDE_MIN    -90.0
 #define LATITUDE_MAX     90.0
 
+#define MILES_PER_LATITUDE 68.70795454545454
+
 /* Unfortunately, in C we have (1 / 0.05 ) != 20
  * This causes incompatibilites with the current Python code.
  */
 #define GEOQUAD_STEP     0.05
 #define GEOQUAD_INV      20
+#define GEOQUAD_FUZZ     (GEOQUAD_STEP * 0.70710678118654757)
 
 /* Interleaved ones and zeroes, LSB = 1 */
 #define INTER16L 0x5555
@@ -52,14 +55,15 @@ static inline void deinterleave_full(uint32_t z, uint16_t *x, uint16_t *y)
 	*y = deinterleave_half(z>>1);
 }
 
+/* TODO: there's something fishy about these functions... */
 static inline double half_to_lng(uint16_t lng16)
 {
-	return (lng16 * GEOQUAD_STEP) + LONGITUDE_MIN;
+	return (lng16 * GEOQUAD_STEP) + (LONGITUDE_MIN / 2);
 }
 
 static inline double half_to_lat(uint16_t lat16)
 {
-	return (lat16 * GEOQUAD_STEP) + LATITUDE_MIN;
+	return (lat16 * GEOQUAD_STEP) + (LATITUDE_MIN * 2);
 }
 
 static inline uint16_t lng_to_half(double lng)
@@ -338,21 +342,34 @@ quad_within_radius(double lat, double lng, double lat_c, double lng_c, double ra
 }
 
 static PyObject*
-geoquad_nearby(PyObject *self, PyObject *args)
+geoquad_nearby(PyObject *self, PyObject *args, PyObject *kw)
 {
 	long geoquad;
-	const double radius;
+	double radius;
 	double radius_sq;
 	double f_lng_orig, f_lat_orig, f_lng, f_lat;
 	uint16_t lng_w, lng_e;
 	uint16_t lng, lat, lng_orig, lat_orig;
 	size_t i, count;
+	int fuzz = 0;
 	PyObject *ret;
-
 	uint16_t *halves;
 
-	if (!PyArg_ParseTuple(args, "ld", &geoquad, &radius))
+	static char *kwlist[] = {"geoquad", "radius", "fuzz", NULL};
+
+	if (!PyArg_ParseTupleAndKeywords(args, kw, "ld|i", kwlist, &geoquad, &radius, &fuzz))
 		return NULL;
+
+	radius /= MILES_PER_LATITUDE;
+
+	/* If the fuzz parameter evaluates to True, then the radius is
+	 * automatically "fuzzed" by making it incrementally bigger. It will be
+	 * fuzzed by the right amount so that any edge effects on the circle will
+	 * be handled correctly.
+	 */
+	if (fuzz)
+		radius += GEOQUAD_FUZZ;
+
 	radius_sq = radius * radius;
 	
 	/* Parse the geoquad into a lng, lat and compute the easternmost
@@ -373,27 +390,27 @@ geoquad_nearby(PyObject *self, PyObject *args)
 
 	f_lng = half_to_lng(lng_w);
 
-	/* Should not execute... */
+#if 0
 	while ((f_lng - 0.5 * GEOQUAD_STEP) > (f_lng_orig - radius)) {
 		lng_w--;
 		f_lng = half_to_lng(lng_w);
 	}
+#endif
 
 	/* Get the easternmost quad */
 	lng_e = lng + (uint16_t) floor(radius / GEOQUAD_STEP);
 
-
 	f_lng = half_to_lng(lng_e);
 
-	/* Should not execute... */
+#if 0
 	while ((f_lng + 0.5 * GEOQUAD_STEP) < (f_lng_orig + radius)) {
 		lng_e++;
 		f_lng = half_to_lng(lng_e);
 	}
+#endif
 
 	count = lng_e - lng_w + 1;
 
-	/* XXX: hmm, we could just do one malloc... */
 	halves = PyMem_Malloc(sizeof(uint16_t) * (count << 1));
 	if (halves == NULL)
 		return PyErr_NoMemory();
@@ -403,7 +420,8 @@ geoquad_nearby(PyObject *self, PyObject *args)
 		lat = lat_orig;
 		f_lng = half_to_lng(lng);
 		f_lat = half_to_lat(lat);
-		while (quad_within_radius(f_lat, f_lng, f_lat_orig, f_lng_orig, radius_sq)) {
+
+		while (quad_within_radius(f_lat + (GEOQUAD_STEP / 2), f_lng + (GEOQUAD_STEP / 2), f_lat_orig, f_lng_orig, radius_sq)) {
 			lat++;
 			f_lat = half_to_lat(lat);
 		}
@@ -412,7 +430,7 @@ geoquad_nearby(PyObject *self, PyObject *args)
 
 		lat = lat_orig;
 		f_lat = half_to_lat(lat);
-		while (quad_within_radius(f_lat, f_lng, f_lat_orig, f_lng_orig, radius_sq)) {
+		while (quad_within_radius(f_lat + (GEOQUAD_STEP / 2), f_lng + (GEOQUAD_STEP / 2), f_lat_orig, f_lng_orig, radius_sq)) {
 			lat--;
 			f_lat = half_to_lat(lat);
 		}
@@ -423,11 +441,14 @@ geoquad_nearby(PyObject *self, PyObject *args)
 	}
 
 	ret = fill_nearby_list(halves, lng_w, count);
-
 	PyMem_Free(halves);
 
-	return ret;
+#ifdef DEBUG
+	if (PyList_Sort(ret) == -1)
+		return NULL;
+#endif
 
+	return ret;
 }
 
 static PyMethodDef geoquad_methods[] = {
@@ -439,7 +460,7 @@ static PyMethodDef geoquad_methods[] = {
 	{ "southof", (PyCFunction) geoquad_southof, METH_VARARGS, "returns the geoquad directly south of a given geoquad" },
 	{ "eastof", (PyCFunction) geoquad_eastof, METH_VARARGS, "returns the geoquad directly east of a given geoquad" },
 	{ "westof", (PyCFunction) geoquad_westof, METH_VARARGS, "returns the geoquad directly west of a given geoquad" },
-	{ "nearby", (PyCFunction) geoquad_nearby, METH_VARARGS, "get nearby geoquads, returns a list of geoquads" },
+	{ "nearby", (PyCFunction) geoquad_nearby, METH_VARARGS|METH_KEYWORDS, "get nearby geoquads, returns a list of geoquads" },
 	{ NULL }
 };
 
@@ -447,11 +468,15 @@ PyMODINIT_FUNC initgeoquad(void)
 {
 	PyObject *m = Py_InitModule3("geoquad", geoquad_methods, "test");
 
-	/* TODO: error checking */
+	/* TODO: There should be error checking here, but I can't figure out how
+	 * to signal failure from a module's init method... */
 	PyObject_SetAttrString(m, "LONGITUDE_MIN", PyFloat_FromDouble(LONGITUDE_MIN));
 	PyObject_SetAttrString(m, "LONGITUDE_MAX", PyFloat_FromDouble(LONGITUDE_MAX));
 	PyObject_SetAttrString(m, "LATITUDE_MIN", PyFloat_FromDouble(LATITUDE_MIN));
 	PyObject_SetAttrString(m, "LATITUDE_MAX", PyFloat_FromDouble(LATITUDE_MAX));
+	PyObject_SetAttrString(m, "MILES_PER_LATITUDE", PyFloat_FromDouble(MILES_PER_LATITUDE));
 	PyObject_SetAttrString(m, "GEOQUAD_STEP", PyFloat_FromDouble(GEOQUAD_STEP));
+	PyObject_SetAttrString(m, "GEOQUAD_INV", PyFloat_FromDouble(GEOQUAD_INV));
+	PyObject_SetAttrString(m, "GEOQUAD_FUZZ", PyFloat_FromDouble(GEOQUAD_FUZZ));
 }
 /* vim: set ts=4 sw=4 tw=78 noet: */

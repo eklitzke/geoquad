@@ -5,12 +5,12 @@ import os
  
 __version__ = '0.1'
  
-macros = [('MODULE_VERSION', '"%s"' % __version__)]
+define_macros = [('MODULE_VERSION', '"%s"' % __version__), ('DEBUG', None)]
  
 geoquad_extension = Extension(
 	name='geoquad',
 	sources=['geoquad.c'],
-	define_macros=macros,
+	define_macros=define_macros,
 )
  
 setup(
