@@ -86,6 +86,9 @@ static inline uint16_t lat_to_half(double lat)
  * These all take a qeoquad and return another geoquad north, south, east or
  * west of the given geoquad. These functions are much faster than parsing and
  * recreating a geoquad.
+ *
+ * TODO: as a small optimization, we could check here if the last digit needs
+ * to be flipped. This will be faster half of the time for "random" usage.
  **************************/
 
 static inline uint32_t quad_northof(uint32_t gq)
@@ -331,16 +334,6 @@ fill_nearby_list(uint16_t halves[], uint16_t lng_w, size_t len)
 	return gs;
 }
 
-/* FIXME: too many arguments */
-static inline int
-quad_within_radius(double lat, double lng, double lat_c, double lng_c, double radius_sq)
-{
-	double delta_lat, delta_lng;
-	delta_lat = lat - lat_c;
-	delta_lng = lng - lng_c;
-	return (delta_lat * delta_lat + delta_lng * delta_lng) <= radius_sq;
-}
-
 static PyObject*
 geoquad_nearby(PyObject *self, PyObject *args, PyObject *kw)
 {
@@ -382,29 +375,29 @@ geoquad_nearby(PyObject *self, PyObject *args, PyObject *kw)
 	f_lng_orig = half_to_lng(lng);
 	f_lat_orig = half_to_lat(lat);
 
-	/* Get the westernmost geoquad */
+	/* Get the westernmost geoquad. This is an overestimate since it's only
+	 * valid at the equator. At latitudes closer to the poles longitudes may
+	 * be closer together, meaning we'll have to adjust this a bit.
+	 *
+	 * This estimates the "widest" part, horizontally, of the circle at the
+	 * center. This may not actually be true for very large circles close to
+	 * the poles (and almost certainly isn't true when the circle contains a
+	 * pole). We don't expect that to happen in normal usage, however.*/
 	lng_w = lng - (uint16_t) ceil(radius_lat / GEOQUAD_STEP);
-
 	f_lng = half_to_lng(lng_w);
-
-#if 0
-	while ((f_lng - 0.5 * GEOQUAD_STEP) > (f_lng_orig - radius)) {
-		lng_w--;
+	while (haversine_distance(f_lat_orig, f_lng + GEOQUAD_STEP, f_lat_orig, f_lng_orig) > radius) {
+		lng_w++;
 		f_lng = half_to_lng(lng_w);
 	}
-#endif
 
-	/* Get the easternmost quad */
+	/* Get the easternmost quad. This is an overestimate, same note as above
+	 * really. */
 	lng_e = lng + (uint16_t) floor(radius_lat / GEOQUAD_STEP);
-
 	f_lng = half_to_lng(lng_e);
-
-#if 0
-	while ((f_lng + 0.5 * GEOQUAD_STEP) < (f_lng_orig + radius)) {
-		lng_e++;
+	while (haversine_distance(f_lat_orig, f_lng, f_lat_orig, f_lng_orig) > radius) {
+		lng_e--;
 		f_lng = half_to_lng(lng_e);
 	}
-#endif
 
 	count = lng_e - lng_w + 1;
 
