@@ -231,50 +231,46 @@ GEOQUAD_DIROF(south)
 GEOQUAD_DIROF(east)
 GEOQUAD_DIROF(west)
 
-/*******************************
- * COMPUTING NEARBY GEOQUADS
- *
- * This describes the case of a large circle and small squares (i.e. radius is
- * large compared to any geoquad). This looks like this:
- *
- *
- *      +-------+
- * ---__|       |
- *      |'.     |
- *      |  \    |
- *      +---\---+
- *           .
- *           |
- *           '
- *
- * Now in this situation, the corner of the geoquad is inside of the circle.
- * Since this corner also belongs to the geoquad west and south of the
- * geoquad, those geoquads have at least one point in the circle and therefore
- * they are contained within the circle as well. The geoquads north and east
- * of the geoquad cannot be in the circle.
- *
- * Sometimes two or three corners will in the circle, i.e.
- *
- * ---__                    ----__
- *       '.                  +-----'.+
- *      +--\----+            |       \
- *      |   \   |            |       |\
- *      |    .  |  or        |       | .
- *      |    |  |            +-------+ |
- *      +----'--+                      '
- *          /
- *
- * In these situations three or four of the adjacent neighbors will be within
- * the circle (instead of two neighbors, as above).
- *
- * Using this property, to find the geoquads that are inside of a circle, we
- * do something like this:
- *  1) Find a geoquad along the edge of the circle (by convention, get the one
- *     due north of the circle's center)
- *  2) Travel along the edge filling in edge geoquads
- *  3) Once we have returned to the original geoquad, the circle is complete.
- *     Fill in all of the "missing" geoquads from the interior of the circle.
- */
+const static double haversine_distance(double lat1, double lng1, double lat2, double lng2)
+{
+	double shlat, shlng;
+
+	lng1 = TO_RADIANS(lng1);
+	lat1 = TO_RADIANS(lat1);
+	lng2 = TO_RADIANS(lng2);
+	lat2 = TO_RADIANS(lat2);
+
+	shlat = sin((lat2 - lat1) / 2.0);
+	shlng = sin((lng2 - lng1) / 2.0);
+
+	return EARTH_RADIUS_MI * 2.0 * asin(fmin(1.0, sqrt(shlat * shlat + cos(lat1) * cos(lat2) * shlng * shlng)));
+}
+
+static PyObject*
+geoquad_haversine_distance(PyObject *self, PyObject *args)
+{
+	PyObject *t1, *t2;
+	double lat1, lat2, lng1, lng2;
+
+	if (!PyArg_ParseTuple(args, "O!O!", &PyTuple_Type, &t1, &PyTuple_Type, &t2))
+		return NULL;
+
+	if (PyTuple_GET_SIZE(t1) != 2) {
+		PyErr_SetString(PyExc_TypeError, "First argument was not a tuple of length two");
+		return NULL;
+	}
+	if (PyTuple_GET_SIZE(t2) != 2) {
+		PyErr_SetString(PyExc_TypeError, "Second argument was not a tuple of length two");
+		return NULL;
+	}
+
+	lat1 = PyFloat_AsDouble(PyTuple_GET_ITEM(t1, 0));
+	lng1 = PyFloat_AsDouble(PyTuple_GET_ITEM(t1, 1));
+	lat2 = PyFloat_AsDouble(PyTuple_GET_ITEM(t2, 0));
+	lng2 = PyFloat_AsDouble(PyTuple_GET_ITEM(t2, 1));
+
+	return PyFloat_FromDouble(haversine_distance(lat1, lng1, lat2, lng2));
+}
 
 /* This creates a Python list object containing a list of geoquads. The
  * interpretation of the return result and of the arguments is as follows:
@@ -349,8 +345,7 @@ static PyObject*
 geoquad_nearby(PyObject *self, PyObject *args, PyObject *kw)
 {
 	long geoquad;
-	double radius;
-	double radius_sq;
+	double radius, radius_lat;
 	double f_lng_orig, f_lat_orig, f_lng, f_lat;
 	uint16_t lng_w, lng_e;
 	uint16_t lng, lat, lng_orig, lat_orig;
@@ -364,7 +359,7 @@ geoquad_nearby(PyObject *self, PyObject *args, PyObject *kw)
 	if (!PyArg_ParseTupleAndKeywords(args, kw, "ld|i", kwlist, &geoquad, &radius, &fuzz))
 		return NULL;
 
-	radius /= MILES_PER_LATITUDE;
+	radius_lat = radius / MILES_PER_LATITUDE;
 
 	/* If the fuzz parameter evaluates to True, then the radius is
 	 * automatically "fuzzed" by making it incrementally bigger. It will be
@@ -372,10 +367,8 @@ geoquad_nearby(PyObject *self, PyObject *args, PyObject *kw)
 	 * be handled correctly.
 	 */
 	if (fuzz)
-		radius += GEOQUAD_FUZZ;
+		radius_lat += GEOQUAD_FUZZ;
 
-	radius_sq = radius * radius;
-	
 	/* Parse the geoquad into a lng, lat and compute the easternmost
 	 * encompassing geoquad.
 	 *
@@ -390,7 +383,7 @@ geoquad_nearby(PyObject *self, PyObject *args, PyObject *kw)
 	f_lat_orig = half_to_lat(lat);
 
 	/* Get the westernmost geoquad */
-	lng_w = lng - (uint16_t) ceil(radius / GEOQUAD_STEP);
+	lng_w = lng - (uint16_t) ceil(radius_lat / GEOQUAD_STEP);
 
 	f_lng = half_to_lng(lng_w);
 
@@ -402,7 +395,7 @@ geoquad_nearby(PyObject *self, PyObject *args, PyObject *kw)
 #endif
 
 	/* Get the easternmost quad */
-	lng_e = lng + (uint16_t) floor(radius / GEOQUAD_STEP);
+	lng_e = lng + (uint16_t) floor(radius_lat / GEOQUAD_STEP);
 
 	f_lng = half_to_lng(lng_e);
 
@@ -425,21 +418,40 @@ geoquad_nearby(PyObject *self, PyObject *args, PyObject *kw)
 		f_lng = half_to_lng(lng);
 		f_lat = half_to_lat(lat);
 
-		while (quad_within_radius(f_lat + (GEOQUAD_STEP / 2), f_lng + (GEOQUAD_STEP / 2), f_lat_orig, f_lng_orig, radius_sq)) {
-			lat++;
-			f_lat = half_to_lat(lat);
-		}
-		lat--;
-		halves[i] = lat;
-
-		lat = lat_orig;
-		f_lat = half_to_lat(lat);
-		while (quad_within_radius(f_lat + (GEOQUAD_STEP / 2), f_lng + (GEOQUAD_STEP / 2), f_lat_orig, f_lng_orig, radius_sq)) {
+		/* If on the west side of the ricle, use the east edge of each geoquad */
+		if (f_lng <= f_lng_orig) {
+			while (haversine_distance(f_lat, f_lng + GEOQUAD_STEP, f_lat_orig, f_lng_orig) <= radius) {
+				lat++;
+				f_lat = half_to_lat(lat);
+			}
 			lat--;
+			halves[i] = lat;
+
+			lat = lat_orig;
 			f_lat = half_to_lat(lat);
+			while (haversine_distance(f_lat + GEOQUAD_STEP, f_lng + GEOQUAD_STEP, f_lat_orig, f_lng_orig) <= radius) {
+				lat--;
+				f_lat = half_to_lat(lat);
+			}
+			lat++;
+			halves[i + count] = lat;
+		} else if (f_lng > f_lng_orig) {
+			while (haversine_distance(f_lat, f_lng, f_lat_orig, f_lng_orig) <= radius) {
+				lat++;
+				f_lat = half_to_lat(lat);
+			}
+			lat--;
+			halves[i] = lat;
+
+			lat = lat_orig;
+			f_lat = half_to_lat(lat);
+			while (haversine_distance(f_lat + GEOQUAD_STEP, f_lng, f_lat_orig, f_lng_orig) <= radius) {
+				lat--;
+				f_lat = half_to_lat(lat);
+			}
+			lat++;
+			halves[i + count] = lat;
 		}
-		lat++;
-		halves[i + count] = lat;
 		i++;
 	}
 
@@ -454,47 +466,6 @@ geoquad_nearby(PyObject *self, PyObject *args, PyObject *kw)
 	return ret;
 }
 
-const static double haversine_distance(double lat1, double lng1, double lat2, double lng2)
-{
-	double shlat, shlng;
-
-	lng1 = TO_RADIANS(lng1);
-	lat1 = TO_RADIANS(lat1);
-	lng2 = TO_RADIANS(lng2);
-	lat2 = TO_RADIANS(lat2);
-
-	shlat = sin((lat2 - lat1) / 2.0);
-	shlng = sin((lng2 - lng1) / 2.0);
-
-	return EARTH_RADIUS_MI * 2.0 * asin(fmin(1.0, sqrt(shlat * shlat + cos(lat1) * cos(lat2) * shlng * shlng)));
-}
-
-static PyObject*
-geoquad_haversine_distance(PyObject *self, PyObject *args)
-{
-	PyObject *t1, *t2;
-	double lat1, lat2, lng1, lng2;
-
-	if (!PyArg_ParseTuple(args, "O!O!", &PyTuple_Type, &t1, &PyTuple_Type, &t2))
-		return NULL;
-
-	if (PyTuple_GET_SIZE(t1) != 2) {
-		PyErr_SetString(PyExc_TypeError, "First argument was not a tuple of length two");
-		return NULL;
-	}
-	if (PyTuple_GET_SIZE(t2) != 2) {
-		PyErr_SetString(PyExc_TypeError, "Second argument was not a tuple of length two");
-		return NULL;
-	}
-
-	lat1 = PyFloat_AsDouble(PyTuple_GET_ITEM(t1, 0));
-	lng1 = PyFloat_AsDouble(PyTuple_GET_ITEM(t1, 1));
-	lat2 = PyFloat_AsDouble(PyTuple_GET_ITEM(t2, 0));
-	lng2 = PyFloat_AsDouble(PyTuple_GET_ITEM(t2, 1));
-
-	return PyFloat_FromDouble(haversine_distance(lat1, lng1, lat2, lng2));
-}
-
 static PyMethodDef geoquad_methods[] = {
 	{ "create", (PyCFunction) geoquad_create, METH_VARARGS, "create a geoquad from a (lat, lng)" },
 	{ "parse", (PyCFunction) geoquad_parse, METH_VARARGS, "SW corner of a geoquad, returns a (lat, lng)" },
@@ -505,7 +476,7 @@ static PyMethodDef geoquad_methods[] = {
 	{ "eastof", (PyCFunction) geoquad_eastof, METH_VARARGS, "returns the geoquad directly east of a given geoquad" },
 	{ "westof", (PyCFunction) geoquad_westof, METH_VARARGS, "returns the geoquad directly west of a given geoquad" },
 	{ "nearby", (PyCFunction) geoquad_nearby, METH_VARARGS|METH_KEYWORDS, "get nearby geoquads, returns a list of geoquads" },
-	{ "haversine_distance", (PyCFunction) geoquad_haversine_distance, METH_VARARGS, "haversine distance" },
+	{ "haversine_distance", (PyCFunction) geoquad_haversine_distance, METH_VARARGS, "haversine distance beteween two (lat, lng) tuples" },
 	{ NULL }
 };
 
