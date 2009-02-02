@@ -13,6 +13,8 @@
 #define LATITUDE_MIN    -90.0
 #define LATITUDE_MAX     90.0
 
+#define EARTH_RADIUS_MI 3958.8641024047724
+
 #define MILES_PER_LATITUDE 68.70795454545454
 
 /* Unfortunately, in C we have (1 / 0.05 ) != 20
@@ -29,6 +31,8 @@
 /* Interleaved ones and zeroes, MSB = 1 */
 #define INTER16M 0xAAAA
 #define INTER32M 0xAAAAAAAA
+
+#define TO_RADIANS(x)   (x * M_PI / 180.0)
 
 /* A half interleave/ */
 static const inline uint32_t interleave_half(uint16_t x)
@@ -437,7 +441,6 @@ geoquad_nearby(PyObject *self, PyObject *args, PyObject *kw)
 		lat++;
 		halves[i + count] = lat;
 		i++;
-
 	}
 
 	ret = fill_nearby_list(halves, lng_w, count);
@@ -451,6 +454,47 @@ geoquad_nearby(PyObject *self, PyObject *args, PyObject *kw)
 	return ret;
 }
 
+const static double haversine_distance(double lat1, double lng1, double lat2, double lng2)
+{
+	double shlat, shlng;
+
+	lng1 = TO_RADIANS(lng1);
+	lat1 = TO_RADIANS(lat1);
+	lng2 = TO_RADIANS(lng2);
+	lat2 = TO_RADIANS(lat2);
+
+	shlat = sin((lat2 - lat1) / 2.0);
+	shlng = sin((lng2 - lng1) / 2.0);
+
+	return EARTH_RADIUS_MI * 2.0 * asin(fmin(1.0, sqrt(shlat * shlat + cos(lat1) * cos(lat2) * shlng * shlng)));
+}
+
+static PyObject*
+geoquad_haversine_distance(PyObject *self, PyObject *args)
+{
+	PyObject *t1, *t2;
+	double lat1, lat2, lng1, lng2;
+
+	if (!PyArg_ParseTuple(args, "O!O!", &PyTuple_Type, &t1, &PyTuple_Type, &t2))
+		return NULL;
+
+	if (PyTuple_GET_SIZE(t1) != 2) {
+		PyErr_SetString(PyExc_TypeError, "First argument was not a tuple of length two");
+		return NULL;
+	}
+	if (PyTuple_GET_SIZE(t2) != 2) {
+		PyErr_SetString(PyExc_TypeError, "Second argument was not a tuple of length two");
+		return NULL;
+	}
+
+	lat1 = PyFloat_AsDouble(PyTuple_GET_ITEM(t1, 0));
+	lng1 = PyFloat_AsDouble(PyTuple_GET_ITEM(t1, 1));
+	lat2 = PyFloat_AsDouble(PyTuple_GET_ITEM(t2, 0));
+	lng2 = PyFloat_AsDouble(PyTuple_GET_ITEM(t2, 1));
+
+	return PyFloat_FromDouble(haversine_distance(lat1, lng1, lat2, lng2));
+}
+
 static PyMethodDef geoquad_methods[] = {
 	{ "create", (PyCFunction) geoquad_create, METH_VARARGS, "create a geoquad from a (lat, lng)" },
 	{ "parse", (PyCFunction) geoquad_parse, METH_VARARGS, "SW corner of a geoquad, returns a (lat, lng)" },
@@ -461,6 +505,7 @@ static PyMethodDef geoquad_methods[] = {
 	{ "eastof", (PyCFunction) geoquad_eastof, METH_VARARGS, "returns the geoquad directly east of a given geoquad" },
 	{ "westof", (PyCFunction) geoquad_westof, METH_VARARGS, "returns the geoquad directly west of a given geoquad" },
 	{ "nearby", (PyCFunction) geoquad_nearby, METH_VARARGS|METH_KEYWORDS, "get nearby geoquads, returns a list of geoquads" },
+	{ "haversine_distance", (PyCFunction) geoquad_haversine_distance, METH_VARARGS, "haversine distance" },
 	{ NULL }
 };
 
