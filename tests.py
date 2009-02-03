@@ -49,6 +49,10 @@ class GeoquadTestCase(RatioTestCase):
 		assert len(geoquad.nearby(g, 100)) == 2886
 	
 	def test_haversine_increasing(self):
+		'''
+		Test that haversine distance increases when any point is stretched from
+		the origin.
+		'''
 		make_tuple = lambda x: (tuple(x[:2]), tuple(x[2:]))
 		base = [-1, -1, 1, 1]
 		d = geoquad.haversine_distance(*make_tuple(base))
@@ -56,6 +60,19 @@ class GeoquadTestCase(RatioTestCase):
 			b = base[:]
 			b[i] = 2 * v
 			assert geoquad.haversine_distance(*make_tuple(b)) > d
+	
+	def test_haversine_decreasing(self):
+		'''
+		Test that haversine distance decreases when any point is moved towards
+		the origin.
+		'''
+		make_tuple = lambda x: (tuple(x[:2]), tuple(x[2:]))
+		base = [-1, -1, 1, 1]
+		d = geoquad.haversine_distance(*make_tuple(base))
+		for i, v in enumerate(base):
+			b = base[:]
+			b[i] = 0.5 * v
+			assert geoquad.haversine_distance(*make_tuple(b)) < d
 
 if __name__ == '__main__':
 	unittest.main()
