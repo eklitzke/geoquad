@@ -45,8 +45,17 @@ class GeoquadTestCase(RatioTestCase):
 	def test_nearby(self):
 		lat, lng = (10, 20)
 		g = geoquad.create(lat, lng)
-		assert len(geoquad.nearby(g, 0.1)) == 14
-		assert len(geoquad.nearby(g, 0.5)) == 309
+		assert len(geoquad.nearby(g, 10)) == 36
+		assert len(geoquad.nearby(g, 100)) == 2886
+	
+	def test_haversine_increasing(self):
+		make_tuple = lambda x: (tuple(x[:2]), tuple(x[2:]))
+		base = [-1, -1, 1, 1]
+		d = geoquad.haversine_distance(*make_tuple(base))
+		for i, v in enumerate(base):
+			b = base[:]
+			b[i] = 2 * v
+			assert geoquad.haversine_distance(*make_tuple(b)) > d
 
 if __name__ == '__main__':
 	unittest.main()
